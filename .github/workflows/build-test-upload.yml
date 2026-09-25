@@ -1,0 +1,160 @@
+name: Build Test Upload
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v6
+
+      - name: Setup Python (for Mach-O)
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install Node.js and NPM
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: npm install
+        run: |
+          npm ci
+
+      - name: npm test
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm run lint
+          npm exec tsc -- --noEmit
+          npm run package
+          npm run test:smoke
+
+      - name: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: |
+            release/build/SlippiBeamerManager*.dmg
+
+  ubuntu:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v6
+
+      - name: Install Node.js and NPM
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: npm install
+        run: |
+          npm ci
+
+      - name: npm test
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm run lint
+          npm exec tsc -- --noEmit
+          npm run package
+          xvfb-run --auto-servernum npm run test:smoke
+
+      - name: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: ubuntu
+          path: |
+            release/build/SlippiBeamerManager*.AppImage
+
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v6
+
+      - name: Visual Studio build tools
+        run: |
+          choco install visualstudio2022-workload-vctools -y
+
+      - name: Install Node.js and NPM
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: npm install
+        run: |
+          npm ci
+
+      - name: npm test
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm run lint
+          npm exec tsc -- --noEmit
+          npm run package
+          npm run test:smoke
+
+      - name: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: |
+            release/build/SlippiBeamerManager*.exe
+
+  # A v* tag gets a draft release with all three builds attached. Publishing
+  # the draft is what makes installed copies offer the update.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, ubuntu, windows]
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v6
+
+      - name: Check the tag matches the app version
+        run: |
+          app_version="v$(jq -r .version release/app/package.json)"
+          root_version="v$(jq -r .version package.json)"
+          if [ "$GITHUB_REF_NAME" != "$app_version" ] || [ "$GITHUB_REF_NAME" != "$root_version" ]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match package.json ($root_version) and release/app/package.json ($app_version)."
+            exit 1
+          fi
+
+      - name: Download the builds
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create draft release and upload artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Draft $GITHUB_REF_NAME already exists, reusing it."
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --draft \
+              --title "$GITHUB_REF_NAME" \
+              --notes ""
+          fi
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber

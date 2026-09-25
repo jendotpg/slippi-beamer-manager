@@ -1,0 +1,182 @@
+{
+  "name": "slippi-beamer-manager",
+  "description": "Collects Slippi replays from a fleet of Beamers",
+  "version": "0.1.0",
+  "homepage": "https://github.com/jendotpg/slippi-beamer-manager#readme",
+  "bugs": {
+    "url": "https://github.com/jendotpg/slippi-beamer-manager/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jendotpg/slippi-beamer-manager.git"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Jen Levy",
+    "url": "https://github.com/jendotpg"
+  },
+  "main": "./release/app/dist/main/main.js",
+  "scripts": {
+    "build": "electron-vite build",
+    "postinstall": "npm --prefix .erb/tooling ci && install-electron && electron-builder install-app-deps",
+    "lint": "cross-env NODE_ENV=development eslint . --ext .js,.jsx,.ts,.tsx,.cjs",
+    "lint:fix": "cross-env NODE_ENV=development eslint . --ext .js,.jsx,.ts,.tsx,.cjs --fix",
+    "package": "npm run build && electron-builder build --publish never",
+    "rebuild": "electron-rebuild --parallel --types prod,dev,optional --module-dir release/app",
+    "start": "electron-vite dev --watch",
+    "test:smoke": "node .erb/scripts/smoke-test.cjs",
+    "preview": "electron-vite preview"
+  },
+  "browserslist": [
+    "extends browserslist-config-erb"
+  ],
+  "prettier": {
+    "singleQuote": true,
+    "overrides": [
+      {
+        "files": [
+          ".prettierrc",
+          ".eslintrc"
+        ],
+        "options": {
+          "parser": "json"
+        }
+      }
+    ]
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^9.4.0",
+    "@mui/material": "^9.4.0",
+    "electron-debug": "^4.1.0",
+    "electron-store": "^11.0.2",
+    "ipaddr.js": "^2.5.0",
+    "p-queue": "^9.3.3",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "sanitize-filename": "^1.6.4",
+    "semver": "^7.8.5"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
+    "@eslint/compat": "^2.1.1",
+    "@eslint/js": "^10.0.1",
+    "@swc/core": "^1.16.2",
+    "@types/node": "26.6.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/semver": "^7.8.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "browserslist-config-erb": "^0.0.3",
+    "cross-env": "^10.1.0",
+    "electron": "^44.4.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-compat": "^7.0.2",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-prettier": "^5.5.6",
+    "eslint-plugin-promise": "^7.3.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.6",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6"
+  },
+  "build": {
+    "productName": "SlippiBeamerManager",
+    "appId": "org.jendotpg.SlippiBeamerManager",
+    "asar": true,
+    "afterPack": ".erb/scripts/mach-o-uuid.js",
+    "asarUnpack": "**\\*.{node,dll}",
+    "files": [
+      "dist",
+      "node_modules",
+      "package.json"
+    ],
+    "mac": {
+      "target": {
+        "target": "dmg",
+        "arch": "universal"
+      },
+      "type": "distribution",
+      "hardenedRuntime": true,
+      "entitlements": "assets/entitlements.mac.plist",
+      "entitlementsInherit": "assets/entitlements.mac.plist",
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "Slippi Beamer Manager finds Beamers on your local network and downloads their replays.",
+        "NSBonjourServices": [
+          "_beamer._tcp"
+        ]
+      },
+      "identity": null
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    },
+    "directories": {
+      "app": "release/app",
+      "buildResources": "assets",
+      "output": "release/build"
+    },
+    "extraResources": [
+      "./assets/**"
+    ],
+    "publish": null
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=24.0.0",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": ">=10.0.0",
+      "onFail": "error"
+    }
+  },
+  "overrides": {
+    "eslint-plugin-react": {
+      "eslint": "$eslint"
+    },
+    "eslint-plugin-import": {
+      "eslint": "$eslint"
+    },
+    "eslint-plugin-jsx-a11y": {
+      "eslint": "$eslint"
+    }
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
+  "type": "commonjs"
+}
