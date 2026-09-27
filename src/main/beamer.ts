@@ -19,9 +19,8 @@ import {
 } from '../common/types';
 import {
   BeamerFile,
-  countStaleReplays,
-  deleteBeamerReplays,
-  forgetBeamerContexts,
+  countBeamerReplays,
+  deleteBeamerDirs,
   forgetUnserved,
   hideBeamerDirSync,
   isDownloaded,
@@ -768,11 +767,13 @@ async function recountBeamer(beamerId: string) {
     return;
   }
   const dir = beamerDirFor(beamerId);
-  const context = await readBeamerContext(dir);
+  const counts = await countBeamerReplays(dir, files, (name) =>
+    isDownloadPending(dir, name),
+  );
   locals.set(beamerId, {
-    downloaded: files.filter((file) => isDownloaded(context, file)).length,
-    served: files.length,
-    kept: settings.keepOld.on ? await countStaleReplays(dir, files) : 0,
+    downloaded: counts.downloaded,
+    wanted: counts.wanted,
+    kept: settings.keepOld.on ? counts.stale : 0,
   });
   sendBeamerFleet();
 }
@@ -881,17 +882,8 @@ export async function refreshAllBeamers() {
 }
 
 function every(ms: number, poll: () => Promise<void>) {
-  let polling = false;
   setInterval(() => {
-    if (polling) {
-      return;
-    }
-    polling = true;
-    poll()
-      .finally(() => {
-        polling = false;
-      })
-      .catch(() => {});
+    poll().catch(() => {});
   }, ms);
 }
 
@@ -1065,7 +1057,6 @@ export function setBeamerReplaysLocation(location: string) {
     setBeamerHidden(beamerDirIn(previous, beamerId), true).catch(() => {});
   });
   settings.location = location;
-  forgetBeamerContexts();
   listedIds.forEach((beamerId) => {
     setBeamerHidden(beamerDirFor(beamerId), false).catch(() => {});
   });
@@ -1084,8 +1075,11 @@ export const measureDownloadedReplays = (): Promise<ReplaysSize> =>
 
 export async function deleteDownloadedReplays() {
   cancelDownloads();
-  await deleteBeamerReplays(settings.location);
-  await Promise.all([...indexes.keys()].map((id) => recountBeamer(id)));
+  try {
+    await deleteBeamerDirs(settings.location);
+  } finally {
+    await Promise.all([...indexes.keys()].map((id) => recountBeamer(id)));
+  }
 }
 
 export function hideSeenBeamers() {

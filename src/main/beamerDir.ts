@@ -4,6 +4,7 @@ import {
   readFile,
   readdir,
   rename,
+  rm,
   stat,
   unlink,
   writeFile,
@@ -64,28 +65,16 @@ const contextPath = (dir: string) => path.join(dir, CONTEXT);
 const sameReplay = (a: { name: string; size?: number }, b: DownloadedReplay) =>
   a.name === b.name && (a.size == null || b.size == null || a.size === b.size);
 
-const contexts = new Map<string, BeamerContext>();
 const writes = new Map<string, Promise<unknown>>();
 
-export function forgetBeamerContexts() {
-  contexts.clear();
-}
-
-async function loadContext(dir: string): Promise<BeamerContext | null> {
+async function loadContext(dir: string) {
   let text;
   try {
     text = await readFile(contextPath(dir), 'utf8');
   } catch {
-    contexts.delete(dir);
     return null;
   }
-  const cached = contexts.get(dir);
-  if (cached && serializeContext(cached) === text) {
-    return cached;
-  }
-  const context = parseContext(text);
-  contexts.set(dir, context);
-  return context;
+  return { context: parseContext(text), text };
 }
 
 function updateContext(
@@ -97,31 +86,24 @@ function updateContext(
   const next = previous
     .catch(() => {})
     .then(async () => {
-      let context = await loadContext(dir);
-      if (!context) {
-        if (!create) {
-          return null;
-        }
+      const loaded = await loadContext(dir);
+      let context: BeamerContext;
+      if (loaded) {
+        ({ context } = loaded);
+      } else if (create) {
         await mkdir(dir, { recursive: true });
         context = { label: create.label, downloaded: [] };
-        contexts.delete(dir); // force the first write
+      } else {
+        return null;
       }
       const updated = change(context);
-      if (
-        contexts.get(dir) === context &&
-        serializeContext(updated) === serializeContext(context)
-      ) {
-        return context;
+      const text = serializeContext(updated);
+      if (text === loaded?.text) {
+        return updated;
       }
       const tmp = `${contextPath(dir)}.tmp`;
-      try {
-        await writeFile(tmp, serializeContext(updated));
-        await rename(tmp, contextPath(dir));
-      } catch (e) {
-        contexts.delete(dir);
-        throw e;
-      }
-      contexts.set(dir, updated);
+      await writeFile(tmp, text);
+      await rename(tmp, contextPath(dir));
       return updated;
     });
   writes.set(dir, next);
@@ -271,9 +253,10 @@ async function listReplays(dir: string): Promise<LocalReplay[]> {
   return replays.filter((replay): replay is LocalReplay => replay !== null);
 }
 
-function staleReplays(local: LocalReplay[], files: BeamerFile[]) {
+// served name -> the local replay that's its copy, for each one on disk
+function localCopies(local: LocalReplay[], files: BeamerFile[]) {
   const byName = new Map(local.map((replay) => [replay.name, replay]));
-  const current = new Set<string>();
+  const copies = new Map<string, LocalReplay>();
   files.forEach((file) => {
     for (let n = 0; ; n += 1) {
       const replay = byName.get(candidateName(file.name, n));
@@ -281,11 +264,18 @@ function staleReplays(local: LocalReplay[], files: BeamerFile[]) {
         return;
       }
       if (file.size == null || replay.size === file.size) {
-        current.add(replay.name);
+        copies.set(file.name, replay);
         return;
       }
     }
   });
+  return copies;
+}
+
+function staleReplays(local: LocalReplay[], files: BeamerFile[]) {
+  const current = new Set(
+    [...localCopies(local, files).values()].map((replay) => replay.name),
+  );
   return local.filter((replay) => !current.has(replay.name));
 }
 
@@ -334,8 +324,27 @@ export async function pruneBeamerDir(
   return kept.length;
 }
 
-export async function countStaleReplays(dir: string, files: BeamerFile[]) {
-  return staleReplays(await listReplays(dir), files).length;
+export async function countBeamerReplays(
+  dir: string,
+  files: BeamerFile[],
+  isPending: (name: string) => boolean,
+) {
+  const [context, local] = await Promise.all([
+    readBeamerContext(dir),
+    listReplays(dir),
+  ]);
+  const copies = localCopies(local, files);
+  const deleted = files.filter(
+    (file) =>
+      !copies.has(file.name) &&
+      isDownloaded(context, file) &&
+      !isPending(file.name),
+  ).length;
+  return {
+    downloaded: copies.size,
+    wanted: files.length - deleted,
+    stale: staleReplays(local, files).length,
+  };
 }
 
 async function beamerDirsIn(location: string) {
@@ -376,14 +385,11 @@ export async function measureBeamerDirs(
   };
 }
 
-export async function deleteBeamerReplays(location: string) {
+export async function deleteBeamerDirs(location: string) {
   await Promise.all(
-    (await beamerDirsIn(location)).map(async (dir) =>
-      Promise.all(
-        (await listDir(dir))
-          .filter((dirent) => isReplayFile(dirent.name))
-          .map((dirent) => remove(path.join(dir, dirent.name))),
-      ),
-    ),
+    (await beamerDirsIn(location)).map(async (dir) => {
+      await writes.get(dir)?.catch(() => {});
+      await rm(dir, { force: true, recursive: true });
+    }),
   );
 }

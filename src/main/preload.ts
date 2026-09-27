@@ -39,6 +39,8 @@ const electronHandler = {
     ipcRenderer.invoke('getBeamerReplaysLocation'),
   chooseBeamerReplaysLocation: (): Promise<string> =>
     ipcRenderer.invoke('chooseBeamerReplaysLocation'),
+  openInReplayReporter: (): Promise<void> =>
+    ipcRenderer.invoke('openInReplayReporter'),
   getMaxGamesFromIndex: (): Promise<number> =>
     ipcRenderer.invoke('getMaxGamesFromIndex'),
   setMaxGamesFromIndex: (maxGames: number): Promise<number> =>

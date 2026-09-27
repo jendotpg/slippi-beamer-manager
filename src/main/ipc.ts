@@ -1,3 +1,4 @@
+import { mkdir } from 'fs/promises';
 import path from 'path';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import Store from 'electron-store';
@@ -100,6 +101,12 @@ export default function setupIpc(getWindow: () => BrowserWindow | null) {
       setBeamerReplaysLocation(result.filePaths[0]);
     }
     return replaysLocation();
+  });
+  ipcMain.handle('openInReplayReporter', async () => {
+    await mkdir(replaysLocation(), { recursive: true });
+    await shell.openExternal(
+      `replay-manager://open?${new URLSearchParams({ path: replaysLocation() })}`,
+    );
   });
 
   ipcMain.handle('getMaxGamesFromIndex', () => store.get('maxGamesFromIndex'));

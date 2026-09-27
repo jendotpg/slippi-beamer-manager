@@ -9,7 +9,7 @@
  * `./release/app/dist/main/main.js` using electron-vite.
  */
 import path from 'path';
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, powerSaveBlocker, shell } from 'electron';
 import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 import setupIpc from './ipc';
@@ -117,6 +117,7 @@ if (!app.requestSingleInstanceLock()) {
   app
     .whenReady()
     .then(async () => {
+      powerSaveBlocker.start('prevent-app-suspension');
       setupIpc(() => mainWindow);
       await createWindow();
       app.on('activate', onActivate);

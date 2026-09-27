@@ -308,8 +308,7 @@ export default function Settings() {
             )}) will be deleted from this computer. The beamers keep theirs.`}
           </Alert>
           <DialogContentText variant="body2" sx={{ mt: 1 }}>
-            Replays a beamer is still serving won&apos;t download again unless
-            you press its download button.
+            Subscribed beamers download the replays they still serve again.
           </DialogContentText>
         </DialogContent>
         <DialogActions>

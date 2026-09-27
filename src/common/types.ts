@@ -31,7 +31,7 @@ export type Beamer = {
 
 export type BeamerLocal = {
   downloaded: number;
-  served: number;
+  wanted: number;
   kept: number; // older replays kept by "Keep old replays" setting
 };
 

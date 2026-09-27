@@ -26,6 +26,7 @@ import {
   Download,
   ErrorOutlined,
   Memory,
+  OpenInNew,
   Refresh,
   Warning,
 } from '@mui/icons-material';
@@ -46,7 +47,7 @@ import {
 import getCharacterIcon from './getCharacterIcon';
 
 type BeamerBusy = {
-  kind: 'download' | 'refresh' | 'subscribe' | 'reset';
+  kind: 'download' | 'refresh' | 'subscribe' | 'reset' | 'open';
   target: string; // 'all' or a beamer id
 };
 
@@ -81,10 +82,10 @@ function formatLocal(beamer: LabeledBeamer, keepOldReplays: boolean) {
   if (!beamer.local) {
     return '-';
   }
-  const { downloaded, served, kept } = beamer.local;
+  const { downloaded, wanted, kept } = beamer.local;
   return keepOldReplays
-    ? `${downloaded}/${served} (${kept} in back-up)`
-    : `${downloaded}/${served}`;
+    ? `${downloaded}/${wanted} (${kept} in back-up)`
+    : `${downloaded}/${wanted}`;
 }
 
 function BeamersTooltip({
@@ -373,6 +374,11 @@ export default function FleetView() {
     setConfirmingReset(null);
   };
 
+  const openInReplayReporter = () =>
+    runBusy({ kind: 'open', target: 'all' }, () =>
+      window.electron.openInReplayReporter(),
+    );
+
   const busyKind = (kind: BeamerBusy['kind']) =>
     busy.some((entry) => entry.kind === kind);
   const busyTarget = (kind: BeamerBusy['kind'], target: string) =>
@@ -470,44 +476,55 @@ export default function FleetView() {
               </Tooltip>
             )}
           </Stack>
-          {fleet.beamers.length > 0 && (
-            <Stack direction="row" sx={{ alignItems: 'center', gap: '4px' }}>
-              <Tooltip
-                arrow
-                title="Refresh the status and replays of every beamer listed here"
-              >
-                <span>
-                  <IconButton
-                    disabled={busyKind('refresh') || busyKind('reset')}
-                    onClick={refreshAll}
-                    size="small"
-                  >
-                    {busyTarget('refresh', 'all') ? (
-                      <CircularProgress size="20px" />
-                    ) : (
-                      <Refresh />
-                    )}
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Tooltip
-                arrow
-                title="Erase the replays on every beamer listed here"
-              >
-                <span>
-                  <Button
-                    color="error"
-                    disabled={busyKind('reset')}
-                    onClick={() => setConfirmingReset('all')}
-                    size="small"
-                    startIcon={<DeleteForever />}
-                  >
-                    Erase all
-                  </Button>
-                </span>
-              </Tooltip>
-            </Stack>
-          )}
+          <Stack direction="row" sx={{ alignItems: 'center', gap: '4px' }}>
+            {fleet.beamers.length > 0 && (
+              <>
+                <Tooltip
+                  arrow
+                  title="Refresh the status and replays of every beamer listed here"
+                >
+                  <span>
+                    <IconButton
+                      disabled={busyKind('refresh') || busyKind('reset')}
+                      onClick={refreshAll}
+                      size="small"
+                    >
+                      {busyTarget('refresh', 'all') ? (
+                        <CircularProgress size="20px" />
+                      ) : (
+                        <Refresh />
+                      )}
+                    </IconButton>
+                  </span>
+                </Tooltip>
+                <Tooltip
+                  arrow
+                  title="Erase the replays on every beamer listed here"
+                >
+                  <span>
+                    <Button
+                      color="error"
+                      disabled={busyKind('reset')}
+                      onClick={() => setConfirmingReset('all')}
+                      size="small"
+                      startIcon={<DeleteForever />}
+                    >
+                      Erase all
+                    </Button>
+                  </span>
+                </Tooltip>
+              </>
+            )}
+            <Button
+              disabled={busyKind('open')}
+              onClick={openInReplayReporter}
+              size="small"
+              startIcon={<OpenInNew />}
+              variant="contained"
+            >
+              Open in Replay Reporter
+            </Button>
+          </Stack>
         </Stack>
         {fleet.beamers.length > 0 && (
           <Table size="small">
