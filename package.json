@@ -91,6 +91,7 @@
     "productName": "SlippiBeamerManager",
     "appId": "org.jendotpg.SlippiBeamerManager",
     "asar": true,
+    "beforePack": ".erb/scripts/dns-sd-binaries.js",
     "afterPack": ".erb/scripts/mach-o-uuid.js",
     "asarUnpack": "**\\*.{node,dll}",
     "files": [
@@ -103,6 +104,7 @@
         "target": "dmg",
         "arch": "universal"
       },
+      "x64ArchFiles": "**/node_modules/@fugood/dns-sd-darwin-*/index.node",
       "type": "distribution",
       "hardenedRuntime": true,
       "entitlements": "assets/entitlements.mac.plist",
