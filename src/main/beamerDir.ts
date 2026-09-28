@@ -12,7 +12,7 @@ import {
 import path from 'path';
 import { KeepOldReplays, ReplaysSize } from '../common/types';
 
-const CONTEXT = 'context.json';
+const CONTEXT = 'subdir.json';
 
 export type BeamerFile = { name: string; size?: number; url: string };
 
