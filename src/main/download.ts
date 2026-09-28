@@ -56,12 +56,23 @@ export class NotFoundDownloadError extends DownloadError {
   }
 }
 
+export class DiskFullDownloadError extends DownloadError {
+  constructor() {
+    super('Not enough disk space');
+    this.name = 'DiskFullDownloadError';
+  }
+}
+
 export function toDownloadError(error: unknown) {
-  return error instanceof DownloadError
-    ? error
-    : new RetryableDownloadError(
-        error instanceof Error ? error.message : String(error),
-      );
+  if (error instanceof DownloadError) {
+    return error;
+  }
+  if (errorCode(error) === 'ENOSPC') {
+    return new DiskFullDownloadError();
+  }
+  return new RetryableDownloadError(
+    error instanceof Error ? error.message : String(error),
+  );
 }
 
 function errorCode(error: unknown) {
@@ -78,6 +89,9 @@ function errorCode(error: unknown) {
 
 function networkError(error: unknown) {
   const code = errorCode(error);
+  if (code === 'ENOSPC') {
+    return new DiskFullDownloadError();
+  }
   if (code && UNREACHABLE_CODES.has(code)) {
     return new UnreachableDownloadError(`unreachable (${code})`);
   }

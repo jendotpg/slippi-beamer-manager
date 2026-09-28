@@ -8,6 +8,7 @@ import {
   recordDownloaded,
 } from './beamerDir';
 import {
+  DiskFullDownloadError,
   UnreachableDownloadError,
   downloadFile,
   toDownloadError,
@@ -142,7 +143,10 @@ class Downloads {
       } else {
         const failure = toDownloadError(error);
         this.fail(job, failure.message);
-        if (failure instanceof UnreachableDownloadError) {
+        if (
+          failure instanceof UnreachableDownloadError ||
+          failure instanceof DiskFullDownloadError
+        ) {
           this.dropWaiting(beamerId, failure.message);
         }
       }

@@ -166,7 +166,7 @@ export default function DownloadSnackbar({
     );
   } else if (status.status === 'error') {
     content = (
-      <Stack sx={{ gap: 1 }}>
+      <Stack sx={{ gap: 1, minHeight: 0 }}>
         <TitleRow
           title="Error Downloading Replays"
           action={<CloseIconButton title="Close" onClick={onClose} />}
@@ -174,17 +174,19 @@ export default function DownloadSnackbar({
         <Typography variant="body2" color="text.secondary">
           Failed to download the following replays:
         </Typography>
-        {status.failedFiles.map((file) => (
-          <Typography
-            key={`${file.label}|${file.fileName ?? ''}|${file.reason}`}
-            variant="body2"
-            color="text.secondary"
-          >
-            {`${file.label}${file.fileName ? ` - ${file.fileName}` : ''}: ${
-              file.reason
-            }`}
-          </Typography>
-        ))}
+        <Stack sx={{ gap: 1, minHeight: 0, overflowY: 'auto' }}>
+          {status.failedFiles.map((file) => (
+            <Typography
+              key={`${file.label}|${file.fileName ?? ''}|${file.reason}`}
+              variant="body2"
+              color="text.secondary"
+            >
+              {`${file.label}${file.fileName ? ` - ${file.fileName}` : ''}: ${
+                file.reason
+              }`}
+            </Typography>
+          ))}
+        </Stack>
       </Stack>
     );
   }
@@ -205,7 +207,17 @@ export default function DownloadSnackbar({
         right: 'auto',
       }}
     >
-      <Paper elevation={6} sx={{ p: 1.5, width: 360 }}>
+      <Paper
+        elevation={6}
+        sx={{
+          p: 1.5,
+          width: 360,
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          maxHeight: 'calc(100vh - 48px)',
+        }}
+      >
         {content}
       </Paper>
     </Snackbar>
