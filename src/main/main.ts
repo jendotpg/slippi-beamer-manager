@@ -14,6 +14,7 @@ import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 import setupIpc from './ipc';
 import { hideSeenBeamers } from './beamer';
+import quitAfterCrash from './crash';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -64,6 +65,14 @@ const createWindow = async () => {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    if (details.reason !== 'clean-exit') {
+      quitAfterCrash(
+        `Renderer process gone: ${details.reason} (exit code ${details.exitCode})`,
+      );
+    }
   });
 
   const menuBuilder = new MenuBuilder(mainWindow);

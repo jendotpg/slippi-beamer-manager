@@ -20,6 +20,7 @@ import {
   setBeamersAutoSubscribe,
   setKeepOldReplays,
 } from './beamer';
+import quitAfterCrash from './crash';
 import { cancelDownloads } from './downloadQueue';
 
 type StoreSchema = {
@@ -155,5 +156,8 @@ export default function setupIpc(getWindow: () => BrowserWindow | null) {
       `https://github.com/${githubRepo}/releases/latest`,
     );
     app.quit();
+  });
+  ipcMain.on('rendererError', (event, details: unknown) => {
+    quitAfterCrash(String(details));
   });
 }

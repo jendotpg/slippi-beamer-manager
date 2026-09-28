@@ -61,6 +61,8 @@ const electronHandler = {
   getLatestVersion: (): Promise<string> =>
     ipcRenderer.invoke('getLatestVersion'),
   update: (): Promise<void> => ipcRenderer.invoke('update'),
+  reportRendererError: (details: string) =>
+    ipcRenderer.send('rendererError', details),
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);
