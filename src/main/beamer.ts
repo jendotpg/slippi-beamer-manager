@@ -46,6 +46,8 @@ const PING_FAILS_BEFORE_OFFLINE = 3;
 const STATUS_POLL_MS = 10000;
 const INDEX_POLL_MS = 10000;
 const INDEX_POLL_OFFSET_MS = 5000;
+const REDISCOVER_MS = 60000;
+const BROWSE_RETRY_MS = 5000;
 
 const EVENT_GROUP = '239.255.42.1';
 const EVENT_PORT = 34700;
@@ -372,7 +374,11 @@ function browseForBeamers(callbacks: {
     stop: () => {
       if (browser) {
         browser.removeAllListeners();
-        browser.stop();
+        try {
+          browser.stop();
+        } catch {
+          // the daemon already let go of it
+        }
         browser = null;
       }
     },
@@ -705,6 +711,11 @@ const locals = new Map<string, BeamerLocal>();
 const browse = {
   handle: null as BeamerBrowseHandle | null,
   error: '',
+  retry: undefined as NodeJS.Timeout | undefined,
+};
+
+const events = {
+  handle: null as BeamerEventsHandle | null,
 };
 
 const listedBeamers = (): LabeledBeamer[] =>
@@ -890,6 +901,10 @@ function every(ms: number, poll: () => Promise<void>) {
 function startPolls() {
   every(STATUS_POLL_MS, pollAllStatus);
   setTimeout(() => every(INDEX_POLL_MS, pollAllIndex), INDEX_POLL_OFFSET_MS);
+  setInterval(() => {
+    restartBeamerBrowser();
+    restartBeamerEvents();
+  }, REDISCOVER_MS);
 }
 
 const statusRefreshInFlight = new Set<string>();
@@ -918,78 +933,92 @@ const onBeamerEvent = async (event: BeamerEvent) => {
   await refreshBeamerForEvent(event.beamerId);
 };
 
-const startBeamerEvents = () => {
-  subscribeBeamerEvents({
+const restartBeamerEvents = () => {
+  events.handle?.stop();
+  events.handle = subscribeBeamerEvents({
     onEvent: (event) => {
       onBeamerEvent(event).catch(() => {});
     },
     onError: () => {
-      // no live hints :( is what it is
+      // no live hints until the next restart :(
     },
   });
 };
 
-const startBeamerBrowser = () => {
-  if (browse.handle) {
-    return;
+function retryBrowseSoon() {
+  if (!browse.retry) {
+    browse.retry = setTimeout(restartBeamerBrowser, BROWSE_RETRY_MS);
   }
+}
+
+function restartBeamerBrowser() {
+  clearTimeout(browse.retry);
+  browse.retry = undefined;
+  browse.handle?.stop();
+  browse.handle = null;
   browse.error = '';
-  browse.handle = browseForBeamers({
-    onFound: (base) => {
-      const known = findLiveBeamerAt(base.address);
-      if (known) {
-        upsertLiveBeamer({ ...known, ...base });
-      } else {
-        ghosts.set(base.address, {
-          base,
-          error: ghosts.get(base.address)?.error,
-        });
-      }
-      sendBeamerFleet();
-      processBeamerStatus(base)
-        .then(sendBeamerFleet)
-        .catch(() => {
-          sendBeamerFleet();
-        });
-    },
-    onLost: (host) => {
-      const sharing = [
-        ...liveBeamers.byId.values(),
-        ...Array.from(ghosts.values()).map((ghost) => ghost.base),
-      ].filter((base) => base.host === host);
-      if (sharing.length === 0) {
-        return;
-      }
-      if (sharing.length === 1) {
-        forgetBeamerAt(sharing[0].address);
+  try {
+    browse.handle = browseForBeamers({
+      onFound: (base) => {
+        const known = findLiveBeamerAt(base.address);
+        if (known) {
+          upsertLiveBeamer({ ...known, ...base });
+        } else {
+          ghosts.set(base.address, {
+            base,
+            error: ghosts.get(base.address)?.error,
+          });
+        }
         sendBeamerFleet();
-        return;
-      }
-      Promise.all(
-        sharing.map(async (base) => {
-          try {
-            await getBeamerStatus(toBeamerOrigin(base.address));
-            const known = findLiveBeamerAt(base.address);
-            if (known) {
-              markPingHit(known.beamerId);
-            }
-          } catch {
-            forgetBeamerAt(base.address);
-          }
-        }),
-      )
-        .then(sendBeamerFleet)
-        .catch(() => {
+        processBeamerStatus(base)
+          .then(sendBeamerFleet)
+          .catch(() => {
+            sendBeamerFleet();
+          });
+      },
+      onLost: (host) => {
+        const sharing = [
+          ...liveBeamers.byId.values(),
+          ...Array.from(ghosts.values()).map((ghost) => ghost.base),
+        ].filter((base) => base.host === host);
+        if (sharing.length === 0) {
+          return;
+        }
+        if (sharing.length === 1) {
+          forgetBeamerAt(sharing[0].address);
           sendBeamerFleet();
-        });
-    },
-    onError: (error) => {
-      browse.error = error.message;
-      sendBeamerFleet();
-    },
-  });
+          return;
+        }
+        Promise.all(
+          sharing.map(async (base) => {
+            try {
+              await getBeamerStatus(toBeamerOrigin(base.address));
+              const known = findLiveBeamerAt(base.address);
+              if (known) {
+                markPingHit(known.beamerId);
+              }
+            } catch {
+              forgetBeamerAt(base.address);
+            }
+          }),
+        )
+          .then(sendBeamerFleet)
+          .catch(() => {
+            sendBeamerFleet();
+          });
+      },
+      onError: (error) => {
+        browse.error = error.message;
+        sendBeamerFleet();
+        retryBrowseSoon();
+      },
+    });
+  } catch (e) {
+    browse.error = e instanceof Error ? e.message : String(e);
+    retryBrowseSoon();
+  }
   sendBeamerFleet();
-};
+}
 
 export async function downloadNewest(beamerId: string, maxGames: number) {
   const origin = originFor(beamerId);
@@ -1170,11 +1199,7 @@ export function initBeamers(options: {
       recountBeamer(beamerId).catch(() => {});
     },
   });
-  try {
-    startBeamerBrowser();
-  } catch (e) {
-    browse.error = e instanceof Error ? e.message : String(e);
-  }
-  startBeamerEvents();
+  restartBeamerBrowser();
+  restartBeamerEvents();
   startPolls();
 }
