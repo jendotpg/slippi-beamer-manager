@@ -36,7 +36,7 @@ export default function setupIpc(getWindow: () => BrowserWindow | null) {
       beamerReplaysLocation: '',
       autoSubscribeBeamers: true,
       maxGamesFromIndex: 4,
-      keepOldReplays: false,
+      keepOldReplays: true,
       keepOldReplaysCount: 10,
     },
   });

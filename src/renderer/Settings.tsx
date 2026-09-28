@@ -66,7 +66,7 @@ export default function Settings() {
   const [choosingLocation, setChoosingLocation] = useState(false);
   const [autoSubscribe, setAutoSubscribe] = useState(true);
   const [keepOld, setKeepOld] = useState<KeepOldReplays>({
-    on: false,
+    on: true,
     count: 10,
   });
   const [keepOldCount, setKeepOldCount] = useState('');

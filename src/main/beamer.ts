@@ -572,7 +572,7 @@ const settings: {
 } = {
   location: '',
   autoSubscribe: false,
-  keepOld: { on: false, count: 10 },
+  keepOld: { on: true, count: 10 },
 };
 
 function beamerDirIn(location: string, beamerId: string) {
