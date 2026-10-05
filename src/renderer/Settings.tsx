@@ -6,7 +6,6 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
-  DialogContentText,
   DialogTitle,
   Fab,
   Stack,
@@ -307,9 +306,6 @@ export default function Settings() {
               replaysSize.bytes,
             )}) will be deleted from this computer. The beamers keep theirs.`}
           </Alert>
-          <DialogContentText variant="body2" sx={{ mt: 1 }}>
-            Subscribed beamers download the replays they still serve again.
-          </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button

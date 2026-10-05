@@ -699,6 +699,8 @@ const subscriptions = {
   unsubscribed: new Set<string>(), // unsubscribes have session lifetimes
 };
 
+const subscriptionTimeIndex = new Map<string, string[]>(); // beamerId -> names served when subscribed
+
 const autoSubscribeCandidate = (beamer: Beamer) =>
   settings.autoSubscribe &&
   Boolean(beamer.beamerId) &&
@@ -815,13 +817,25 @@ async function processBeamerIndex(beamerId: string) {
   const dir = beamerDirFor(beamerId);
   await forgetUnserved(dir, files);
   if (subscriptions.subscribed.has(beamerId)) {
-    const context = await readBeamerContext(dir);
-    const missing = files.filter(
-      (file) =>
-        !isDownloaded(context, file) && !isDownloadPending(dir, file.name),
-    );
-    if (missing.length > 0) {
-      enqueueDownload(dir, missing, beamerId, beamerLabel(beamerId));
+    const served = files.map((file) => file.name);
+    const atSubscription = subscriptionTimeIndex.get(beamerId);
+    subscriptionTimeIndex.set(
+      beamerId,
+      atSubscription
+        ? atSubscription.filter((name) => served.includes(name))
+        : served,
+    ); // remove no-longer-served files from index in case of collision
+    if (atSubscription) {
+      const context = await readBeamerContext(dir);
+      const missing = files.filter(
+        (file) =>
+          !atSubscription.includes(file.name) &&
+          !isDownloaded(context, file) &&
+          !isDownloadPending(dir, file.name),
+      );
+      if (missing.length > 0) {
+        enqueueDownload(dir, missing, beamerId, beamerLabel(beamerId));
+      }
     }
   }
   await pruneAndRecount(beamerId, files);
@@ -1051,6 +1065,7 @@ export function setBeamerSubscribed(beamerId: string, subscribed: boolean) {
   } else {
     subscriptions.unsubscribed.add(beamerId);
     subscriptions.subscribed.delete(beamerId);
+    subscriptionTimeIndex.delete(beamerId);
   }
   sendBeamerFleet();
 }
