@@ -75,3 +75,5 @@ export const beamerDeadColor: Partial<Record<BeamerHealth, string>> = {
 };
 
 export const githubRepo = 'jendotpg/slippi-beamer-manager';
+
+export const MAX_DOWNLOAD_ATTEMPTS = 3;

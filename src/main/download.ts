@@ -2,12 +2,11 @@ import { createWriteStream } from 'fs';
 import { rename, stat, unlink } from 'fs/promises';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
+import { MAX_DOWNLOAD_ATTEMPTS } from '../common/constants';
+import { beamerFetch } from './util';
 
-const CONNECT_TIMEOUT_MS = 4000;
-const STALL_TIMEOUT_MS = 4000;
-const MAX_ATTEMPTS = 5;
-const MAX_TOTAL_ATTEMPTS = 20;
-const UNREACHABLE_ATTEMPTS = 2;
+const CONNECT_TIMEOUT_MS = 10000;
+const STALL_TIMEOUT_MS = 20000;
 const UNREACHABLE_CODES = new Set([
   'ECONNREFUSED',
   'ENOTFOUND',
@@ -16,7 +15,7 @@ const UNREACHABLE_CODES = new Set([
   'EHOSTDOWN',
   'EAI_AGAIN',
 ]);
-const BACKOFF_MS = [1000, 2000, 4000, 4000];
+const BACKOFF_MS = [1000, 2000];
 
 export class DownloadError extends Error {
   constructor(message: string) {
@@ -215,7 +214,7 @@ async function downloadAttempt(
 
     let response;
     try {
-      response = await fetch(url, {
+      response = await beamerFetch(url, {
         signal: controller.signal,
         headers: {
           'Accept-Encoding': 'gzip',
@@ -293,13 +292,9 @@ export async function downloadFile(
   options: DownloadOptions,
 ): Promise<void> {
   const part = `${dest}.part`;
-  let tries = 1;
-  let attempts = 0;
-  const started = await sizeOf(part);
-  options.onStart?.(started);
-  let best = started;
+  options.onStart?.(await sizeOf(part));
 
-  for (;;) {
+  for (let attempt = 1; ; attempt += 1) {
     try {
       await downloadAttempt(url, part, options);
 
@@ -312,35 +307,19 @@ export async function downloadFile(
         failure instanceof NotFoundDownloadError
       ) {
         await discard(part);
-        best = 0;
       }
-      if (!(failure instanceof RetryableDownloadError)) {
+      if (
+        !(failure instanceof RetryableDownloadError) ||
+        attempt >= MAX_DOWNLOAD_ATTEMPTS
+      ) {
         throw failure;
       }
 
-      const written = await sizeOf(part);
-      if (written !== best) {
-        best = written;
-        attempts = 0;
-      } else {
-        attempts += 1;
-      }
-      const budget =
-        failure instanceof UnreachableDownloadError
-          ? UNREACHABLE_ATTEMPTS
-          : MAX_ATTEMPTS;
-      if (attempts >= budget || tries >= MAX_TOTAL_ATTEMPTS) {
-        throw failure;
-      }
-
-      tries += 1;
-      options.onAttempt?.(tries);
-
-      const backoff =
-        failure.retryAfterMs ??
-        BACKOFF_MS[Math.min(attempts - 1, BACKOFF_MS.length - 1)];
-
-      await sleep(backoff, options.signal);
+      options.onAttempt?.(attempt + 1);
+      await sleep(
+        failure.retryAfterMs ?? BACKOFF_MS[attempt - 1],
+        options.signal,
+      );
       if (options.signal?.aborted) {
         throw new DownloadError('cancelled');
       }

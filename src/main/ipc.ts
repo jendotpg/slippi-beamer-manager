@@ -6,6 +6,7 @@ import { assertBoolean, assertInteger, assertString } from '../common/asserts';
 import { githubRepo } from '../common/constants';
 import { KeepOldReplays } from '../common/types';
 import {
+  cancelAndSkipDownloads,
   deleteDownloadedReplays,
   downloadNewest,
   getBeamerFleet,
@@ -21,7 +22,6 @@ import {
   setKeepOldReplays,
 } from './beamer';
 import quitAfterCrash from './crash';
-import { cancelDownloads } from './downloadQueue';
 
 type StoreSchema = {
   beamerReplaysLocation: string; // '' until chosen - see replaysLocation()
@@ -84,7 +84,7 @@ export default function setupIpc(getWindow: () => BrowserWindow | null) {
     downloadNewest(assertString(beamerId), store.get('maxGamesFromIndex')),
   );
   ipcMain.handle('cancelDownloads', () => {
-    cancelDownloads();
+    cancelAndSkipDownloads();
   });
 
   ipcMain.handle('getBeamerReplaysLocation', () => replaysLocation());

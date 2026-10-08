@@ -30,6 +30,7 @@ import {
   setBeamerHidden,
   setBeamerLabel,
 } from './beamerDir';
+import { beamerFetch } from './util';
 import {
   cancelDownloads,
   enqueueDownload,
@@ -259,7 +260,7 @@ type StatusResult =
 async function getBeamerStatus(origin: string): Promise<StatusResult> {
   let response;
   try {
-    response = await fetch(`${origin}/status`, {
+    response = await beamerFetch(`${origin}/status`, {
       signal: AbortSignal.timeout(STATUS_TIMEOUT_MS),
     });
   } catch (e) {
@@ -289,7 +290,7 @@ async function getBeamerStatus(origin: string): Promise<StatusResult> {
 async function requestBeamerReset(origin: string) {
   let response;
   try {
-    response = await fetch(`${origin}/reset-beamer`, {
+    response = await beamerFetch(`${origin}/reset-beamer`, {
       method: 'POST',
       headers: { 'X-Beamer-Confirm': 'reset' },
       body: '',
@@ -484,7 +485,7 @@ async function fetchIndex(origin: string) {
   let last: unknown;
   for (let i = 0; i < INDEX_ATTEMPTS; i += 1) {
     try {
-      return await fetch(`${origin}/SLIPPI/`, {
+      return await beamerFetch(`${origin}/SLIPPI/`, {
         signal: AbortSignal.timeout(INDEX_TIMEOUT_MS),
       });
     } catch (e) {
@@ -511,13 +512,16 @@ function beamerReplayUrl(url: string, origin: string): string {
   return resolvedStr.startsWith(prefix) ? resolvedStr : '';
 }
 
-// newest first
+// newest first, or null for a 503 - a non-answer, neither a hit nor a miss
 async function getBeamerIndex(origin: string) {
   let response;
   try {
     response = await fetchIndex(origin);
   } catch (e) {
     throw unreachableError(e, origin);
+  }
+  if (response.status === 503) {
+    return null;
   }
   if (!response.ok) {
     throw new Error(
@@ -699,7 +703,9 @@ const subscriptions = {
   unsubscribed: new Set<string>(), // unsubscribes have session lifetimes
 };
 
-const subscriptionTimeIndex = new Map<string, string[]>(); // beamerId -> names served when subscribed
+const catchUpSkips = new Map<string, Set<string>>();
+const skipCatchUp = (beamerId: string, name: string) =>
+  catchUpSkips.get(beamerId)?.add(name);
 
 const autoSubscribeCandidate = (beamer: Beamer) =>
   settings.autoSubscribe &&
@@ -803,7 +809,7 @@ async function processBeamerIndex(beamerId: string) {
   if (!origin) {
     return;
   }
-  let files: BeamerFile[];
+  let files: BeamerFile[] | null;
   try {
     files = await getBeamerIndex(origin);
   } catch {
@@ -811,25 +817,30 @@ async function processBeamerIndex(beamerId: string) {
     sendBeamerFleet();
     return; // unreachable or no index
   }
+  if (!files) {
+    return;
+  }
   markPingHit(beamerId);
   indexes.set(beamerId, files);
 
   const dir = beamerDirFor(beamerId);
   await forgetUnserved(dir, files);
   if (subscriptions.subscribed.has(beamerId)) {
-    const served = files.map((file) => file.name);
-    const atSubscription = subscriptionTimeIndex.get(beamerId);
-    subscriptionTimeIndex.set(
-      beamerId,
-      atSubscription
-        ? atSubscription.filter((name) => served.includes(name))
-        : served,
-    ); // remove no-longer-served files from index in case of collision
-    if (atSubscription) {
+    const served = new Set(files.map((file) => file.name));
+    const skips = catchUpSkips.get(beamerId);
+    if (!skips) {
+      catchUpSkips.set(beamerId, served);
+    } else {
+      // remove no-longer-served files in case of collision
+      skips.forEach((name) => {
+        if (!served.has(name)) {
+          skips.delete(name);
+        }
+      });
       const context = await readBeamerContext(dir);
       const missing = files.filter(
         (file) =>
-          !atSubscription.includes(file.name) &&
+          !skips.has(file.name) &&
           !isDownloaded(context, file) &&
           !isDownloadPending(dir, file.name),
       );
@@ -863,10 +874,15 @@ const processBeamerStatus = async (base: BeamerBase) => {
     }
     return;
   }
-  const beamer =
-    result.kind === 'status' ? beamerFromStatus(base, result.body) : null;
+  if (result.kind === 'unreported') {
+    if (!findLiveBeamerAt(base.address)) {
+      ghosts.set(base.address, { base });
+    }
+    return;
+  }
+  const beamer = beamerFromStatus(base, result.body);
 
-  if (!beamer || !beamer.beamerId) {
+  if (!beamer.beamerId) {
     removeLiveBeamerAt(base.address);
     ghosts.set(base.address, { base });
     return;
@@ -998,17 +1014,14 @@ function restartBeamerBrowser() {
         if (sharing.length === 0) {
           return;
         }
-        if (sharing.length === 1) {
-          forgetBeamerAt(sharing[0].address);
-          sendBeamerFleet();
-          return;
-        }
         Promise.all(
           sharing.map(async (base) => {
             try {
-              await getBeamerStatus(toBeamerOrigin(base.address));
+              const result = await getBeamerStatus(
+                toBeamerOrigin(base.address),
+              );
               const known = findLiveBeamerAt(base.address);
-              if (known) {
+              if (known && result.kind === 'status') {
                 markPingHit(known.beamerId);
               }
             } catch {
@@ -1039,13 +1052,16 @@ export async function downloadNewest(beamerId: string, maxGames: number) {
   if (!origin) {
     throw new Error('That beamer is no longer advertising itself.');
   }
-  let files: BeamerFile[];
+  let files: BeamerFile[] | null;
   try {
     files = await getBeamerIndex(origin);
   } catch (e) {
     markPingMiss(beamerId);
     sendBeamerFleet();
     throw e;
+  }
+  if (!files) {
+    throw new Error('That beamer is busy right now. Try again in a moment.');
   }
   markPingHit(beamerId);
   indexes.set(beamerId, files);
@@ -1065,7 +1081,7 @@ export function setBeamerSubscribed(beamerId: string, subscribed: boolean) {
   } else {
     subscriptions.unsubscribed.add(beamerId);
     subscriptions.subscribed.delete(beamerId);
-    subscriptionTimeIndex.delete(beamerId);
+    catchUpSkips.delete(beamerId);
   }
   sendBeamerFleet();
 }
@@ -1116,6 +1132,12 @@ export function setBeamerReplaysLocation(location: string) {
 
 export const measureDownloadedReplays = (): Promise<ReplaysSize> =>
   measureBeamerDirs(settings.location);
+
+export function cancelAndSkipDownloads() {
+  cancelDownloads().forEach(({ beamerId, name }) =>
+    skipCatchUp(beamerId, name),
+  );
+}
 
 export async function deleteDownloadedReplays() {
   cancelDownloads();
@@ -1213,6 +1235,10 @@ export function initBeamers(options: {
     onDownloaded: (beamerId) => {
       recountBeamer(beamerId).catch(() => {});
     },
+    onFailed: skipCatchUp,
+    // TODO: this should probably throw an
+    // erorr dialog, but i want to get nyse networked
+    // without throwing this first.
   });
   restartBeamerBrowser();
   restartBeamerEvents();

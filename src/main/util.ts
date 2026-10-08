@@ -8,3 +8,9 @@ export function resolveHtmlPath(htmlFileName: string) {
   }
   return pathToFileURL(path.join(__dirname, '../renderer', htmlFileName)).href;
 }
+
+export function beamerFetch(url: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  headers.set('Connection', 'close');
+  return fetch(url, { ...init, headers });
+}

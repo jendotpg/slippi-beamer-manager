@@ -12,6 +12,7 @@ import {
   Typography,
 } from '@mui/material';
 import { Close, Download, Remove } from '@mui/icons-material';
+import { MAX_DOWNLOAD_ATTEMPTS } from '../common/constants';
 import { DownloadStatus } from '../common/types';
 
 const MAX_VISIBLE_SOURCES = 3;
@@ -140,7 +141,7 @@ export default function DownloadSnackbar({
         </Typography>
         {attempt !== undefined && (
           <Typography variant="body2" color="text.secondary">
-            {`Connection dropped, retrying (attempt ${attempt})...`}
+            {`Connection dropped, retrying (attempt ${attempt} of ${MAX_DOWNLOAD_ATTEMPTS})...`}
           </Typography>
         )}
         <Stack direction="row" sx={{ justifyContent: 'flex-end' }}>
@@ -187,6 +188,10 @@ export default function DownloadSnackbar({
             </Typography>
           ))}
         </Stack>
+        <Typography variant="body2" color="text.secondary">
+          {"These won't retry on their own - use a beamer's Download button " +
+            'to try again.'}
+        </Typography>
       </Stack>
     );
   }

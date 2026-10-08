@@ -35,7 +35,10 @@ const keyOf = (dir: string, name: string) => path.join(dir, name);
 type Hooks = {
   sendStatus: (status: DownloadStatus) => void;
   onDownloaded: (beamerId: string) => void;
+  onFailed: (beamerId: string, name: string) => void;
 };
+
+export type DroppedDownload = { beamerId: string; name: string };
 
 class Downloads {
   private readonly wave = new Wave();
@@ -46,7 +49,11 @@ class Downloads {
 
   private controller = new AbortController();
 
-  private hooks: Hooks = { sendStatus: () => {}, onDownloaded: () => {} };
+  private hooks: Hooks = {
+    sendStatus: () => {},
+    onDownloaded: () => {},
+    onFailed: () => {},
+  };
 
   private lastSentAt = 0;
 
@@ -81,10 +88,14 @@ class Downloads {
     }
   }
 
-  cancel() {
+  cancel(): DroppedDownload[] {
     if (this.jobs.size === 0) {
-      return;
+      return [];
     }
+    const dropped = [...this.jobs.values()].map(({ request }) => ({
+      beamerId: request.beamerId,
+      name: request.file.name,
+    }));
     this.controller.abort();
     this.controller = new AbortController();
     this.queues.forEach((queue) => queue.clear());
@@ -95,6 +106,7 @@ class Downloads {
     });
     this.wave.cancel();
     this.finishWave();
+    return dropped;
   }
 
   private queueFor(beamerId: string) {
@@ -175,6 +187,7 @@ class Downloads {
       fileName: job.request.file.name,
       reason,
     });
+    this.hooks.onFailed(job.request.beamerId, job.request.file.name);
   }
 
   private finishWave() {
@@ -232,7 +245,7 @@ export const isDownloadPending = (dir: string, name: string) =>
   downloads.isPending(dir, name);
 
 export function cancelDownloads() {
-  downloads.cancel();
+  return downloads.cancel();
 }
 
 export function enqueueDownload(
