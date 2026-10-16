@@ -16,6 +16,7 @@ const UNREACHABLE_CODES = new Set([
   'EAI_AGAIN',
 ]);
 const BACKOFF_MS = [1000, 2000];
+const BUSY_RETRY_MS = 15000;
 
 export class DownloadError extends Error {
   constructor(message: string) {
@@ -25,11 +26,18 @@ export class DownloadError extends Error {
 }
 
 export class RetryableDownloadError extends DownloadError {
-  readonly retryAfterMs?: number;
-
-  constructor(message: string, retryAfterMs?: number) {
+  constructor(message: string) {
     super(message);
     this.name = 'RetryableDownloadError';
+  }
+}
+
+export class BusyDownloadError extends DownloadError {
+  readonly retryAfterMs: number;
+
+  constructor(message: string, retryAfterMs: number) {
+    super(message);
+    this.name = 'BusyDownloadError';
     this.retryAfterMs = retryAfterMs;
   }
 }
@@ -166,11 +174,14 @@ function statusError(response: Response) {
   if (status === 404) {
     return new NotFoundDownloadError(message);
   }
-  if (status >= 500 || status === 408 || status === 429) {
-    return new RetryableDownloadError(
+  if (status === 503) {
+    return new BusyDownloadError(
       message,
-      parseRetryAfter(response.headers.get('retry-after')),
+      parseRetryAfter(response.headers.get('retry-after')) ?? BUSY_RETRY_MS,
     );
+  }
+  if (status >= 500 || status === 408 || status === 429) {
+    return new RetryableDownloadError(message);
   }
   return new DownloadError(message);
 }
@@ -294,7 +305,8 @@ export async function downloadFile(
   const part = `${dest}.part`;
   options.onStart?.(await sizeOf(part));
 
-  for (let attempt = 1; ; attempt += 1) {
+  let attempt = 1;
+  for (;;) {
     try {
       await downloadAttempt(url, part, options);
 
@@ -308,18 +320,18 @@ export async function downloadFile(
       ) {
         await discard(part);
       }
-      if (
-        !(failure instanceof RetryableDownloadError) ||
-        attempt >= MAX_DOWNLOAD_ATTEMPTS
+      if (failure instanceof BusyDownloadError) {
+        await sleep(failure.retryAfterMs, options.signal);
+      } else if (
+        failure instanceof RetryableDownloadError &&
+        attempt < MAX_DOWNLOAD_ATTEMPTS
       ) {
+        attempt += 1;
+        options.onAttempt?.(attempt);
+        await sleep(BACKOFF_MS[attempt - 2], options.signal);
+      } else {
         throw failure;
       }
-
-      options.onAttempt?.(attempt + 1);
-      await sleep(
-        failure.retryAfterMs ?? BACKOFF_MS[attempt - 1],
-        options.signal,
-      );
       if (options.signal?.aborted) {
         throw new DownloadError('cancelled');
       }
